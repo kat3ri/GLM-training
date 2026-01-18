@@ -73,11 +73,11 @@ class RewardTrainer(BaseTrainer):
             device_map=device_map,
         )
         
-        # Only move to device if device_map is "cpu" in distributed mode
+        # Move to device only when using device_map="cpu"
         # When device_map is "auto", "balanced", etc., the model is already on the correct device(s)
-        # Calling .to() on models loaded with device_map can cause meta tensor issues
-        if self.world_size > 1 and device_map == "cpu":
-            # In distributed mode with cpu device_map, move to local GPU before DDP wrapping
+        # and calling .to() can cause meta tensor errors
+        if device_map == "cpu":
+            # Model was loaded on CPU, move to the target device
             model = model.to(self.device)
         
         # Enable gradient checkpointing if specified
