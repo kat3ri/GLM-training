@@ -151,8 +151,8 @@ def test_model_code_logic():
             device_map = model_device_map
         return device_map
     
-    def should_call_to(world_size, device_map):
-        """Simulate when .to() should be called."""
+    def should_call_to(device_map):
+        """Simulate when .to() should be called based on device_map."""
         return device_map == "cpu"
     
     test_cases = [
@@ -169,7 +169,7 @@ def test_model_code_logic():
         print(f"  Input: world_size={world_size}, model_config_device_map={model_config_device_map}")
         
         device_map = determine_device_map(world_size, model_config_device_map)
-        to_call = should_call_to(world_size, device_map)
+        to_call = should_call_to(device_map)
         
         print(f"  Result: device_map={device_map}, should_call_to={to_call}")
         
