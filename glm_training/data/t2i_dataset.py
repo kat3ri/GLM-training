@@ -4,6 +4,7 @@ Text-to-Image dataset for GLM-Image training.
 from pathlib import Path
 from typing import Optional, List, Tuple
 
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 from PIL import Image
@@ -84,7 +85,6 @@ class T2IDataset(Dataset):
             target_image = self.transform(target_image)
         else:
             # Convert PIL Image to tensor
-            import numpy as np
             target_image = np.array(target_image)  # PIL Image to numpy array
             target_image = torch.from_numpy(target_image).float() / 255.0
             target_image = target_image.permute(2, 0, 1)  # HWC -> CHW
