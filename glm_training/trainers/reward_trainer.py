@@ -59,14 +59,26 @@ class RewardTrainer(BaseTrainer):
             torch.bfloat16
         )
         
+        # Determine device_map based on distributed training
+        if self.world_size > 1:
+            # In distributed training, use cpu device_map and let DDP handle device placement
+            device_map = "cpu"
+        else:
+            device_map = model_config["device_map"]
+        
         model = GLMImageWrapper(
             model_name=model_config["name"],
             component=model_config["component"],
             torch_dtype=torch_dtype,
-            device_map="cpu" if self.world_size > 1 else model_config["device_map"],
+            device_map=device_map,
         )
         
-        model = model.to(self.device)
+        # Move to device only when using device_map="cpu"
+        # When device_map is "auto", "balanced", etc., the model is already on the correct device(s)
+        # and calling .to() can cause meta tensor errors
+        if device_map == "cpu":
+            # Model was loaded on CPU, move to the target device
+            model = model.to(self.device)
         
         # Enable gradient checkpointing if specified
         if self.config["training"]["gradient_checkpointing"]:
