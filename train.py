@@ -8,6 +8,7 @@ import yaml
 from pathlib import Path
 
 import torch
+import torch.distributed as dist
 from torch.utils.data import DataLoader, DistributedSampler
 
 from glm_training.trainers import RewardTrainer
@@ -149,7 +150,7 @@ def main():
     train_dataset, collate_fn = create_dataset(config, mode, is_eval=False)
     
     # Create data loaders
-    if config["distributed"]["enabled"]:
+    if dist.is_initialized():
         train_sampler = DistributedSampler(
             train_dataset,
             shuffle=config["data"]["shuffle"]
