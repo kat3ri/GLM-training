@@ -83,10 +83,10 @@ class T2IDataset(Dataset):
         if self.transform is not None:
             target_image = self.transform(target_image)
         else:
-            # Convert to tensor
-            target_image = torch.from_numpy(
-                torch.tensor(target_image).numpy()
-            ).float() / 255.0
+            # Convert PIL Image to tensor
+            import numpy as np
+            target_image = np.array(target_image)  # PIL Image to numpy array
+            target_image = torch.from_numpy(target_image).float() / 255.0
             target_image = target_image.permute(2, 0, 1)  # HWC -> CHW
         
         return {
