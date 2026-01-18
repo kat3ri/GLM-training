@@ -23,8 +23,10 @@ training:
   mode: "t2i"  # text-to-image mode
   
   # Basic training parameters
-  batch_size: 2
-  gradient_accumulation_steps: 4
+  # Note: batch_size must be 1 due to AR model limitations in the GLM-Image pipeline.
+  # Use gradient_accumulation_steps to achieve effective larger batch sizes.
+  batch_size: 1
+  gradient_accumulation_steps: 8  # Effective batch size = 1 * 8 = 8
   num_epochs: 10
   max_steps: null  # Set to override num_epochs
   
