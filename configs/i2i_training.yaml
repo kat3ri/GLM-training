@@ -23,6 +23,8 @@ training:
   mode: "i2i"  # image-to-image mode
   
   # Basic training parameters
+  # Note: batch_size > 1 is supported. The GLM-Image AR model processes prompts
+  # sequentially (batch_size=1 internally), but gradient accumulation works across batches.
   batch_size: 2
   gradient_accumulation_steps: 4
   num_epochs: 10
