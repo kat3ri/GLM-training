@@ -28,7 +28,17 @@ def create_mock_vae():
         latent_dist.sample = lambda: torch.randn(batch_size, 4, x.shape[2]//8, x.shape[3]//8, device=x.device)
         return latent_dist
     
+    # Mock decode method
+    def mock_decode(latents):
+        result = Mock()
+        # Decode latents back to images (upsample by 8x)
+        batch_size = latents.shape[0]
+        # Return images in range [-1, 1] (typical for VAE output)
+        result.sample = torch.randn(batch_size, 3, latents.shape[2]*8, latents.shape[3]*8, device=latents.device)
+        return result
+    
     vae.encode = mock_encode
+    vae.decode = mock_decode
     return vae
 
 
@@ -40,7 +50,7 @@ def create_mock_dit_model():
             # Add a simple linear layer to make parameters trainable
             self.dummy_layer = nn.Linear(10, 10)
         
-        def forward(self, hidden_states, timesteps):
+        def forward(self, hidden_states, timesteps, encoder_hidden_states=None):
             result = Mock()
             # Return noise prediction with same shape as input
             result.sample = torch.randn_like(hidden_states, requires_grad=True)
@@ -67,6 +77,9 @@ def create_mock_glm_wrapper(component="dit"):
     model.vae = create_mock_vae()
     model.dit_model = create_mock_dit_model()
     model.ar_model = create_mock_ar_model()
+    
+    # Set torch_dtype to a real torch dtype
+    model.torch_dtype = torch.float32
     
     # Mock get_trainable_parameters
     if component == "dit":
@@ -178,6 +191,9 @@ def test_train_step_dit():
         trainer.mode = "t2i"
         trainer.use_amp = False
         trainer.global_step = 0
+        trainer.training = True
+        trainer.kl_coef = config["reward"]["grpo"]["kl_coef"]
+        trainer.clip_range = config["reward"]["grpo"]["clip_range"]
         
         # Create optimizer
         trainer.optimizer = torch.optim.AdamW(
@@ -313,6 +329,9 @@ def test_train_step_ar():
         trainer.mode = "t2i"
         trainer.use_amp = False
         trainer.global_step = 0
+        trainer.training = True
+        trainer.kl_coef = config["reward"]["grpo"]["kl_coef"]
+        trainer.clip_range = config["reward"]["grpo"]["clip_range"]
         
         trainer.optimizer = torch.optim.AdamW(
             trainer.model.get_trainable_parameters(),
