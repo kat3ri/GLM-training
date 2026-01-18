@@ -31,7 +31,15 @@ pip install -r requirements.txt
 # Install transformers and diffusers from source (required for GLM-Image)
 pip install git+https://github.com/huggingface/transformers.git
 pip install git+https://github.com/huggingface/diffusers.git
+
+# Optional: Install additional dependencies (Linux/Mac only)
+# Note: bitsandbytes may not work on Windows
+pip install -r requirements-optional.txt
 ```
+
+### Windows Installation Note
+
+On Windows, some optional dependencies (like `bitsandbytes`) may fail to install due to missing system libraries (`aio.lib`, `cufile.lib`). These packages are not required for core functionality. If you encounter installation errors, you can safely skip the optional dependencies.
 
 ## Quick Start
 

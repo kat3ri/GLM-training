@@ -1,0 +1,7 @@
+# Optional dependencies that may not work on all platforms
+# These packages provide additional features but are not required for core functionality
+
+# bitsandbytes for 8-bit/4-bit quantization
+# Note: May not work on Windows due to missing aio.lib and cufile.lib
+# Linux/Mac users can install with: pip install bitsandbytes>=0.41.0
+bitsandbytes>=0.41.0; sys_platform != 'win32'
