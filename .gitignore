@@ -31,6 +31,9 @@ wheels/
 .pytest_cache/
 htmlcov/
 
+# Test files (temporary)
+test_device_map_fix.py
+
 # Jupyter Notebook
 .ipynb_checkpoints
 
