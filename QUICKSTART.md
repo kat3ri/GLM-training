@@ -8,7 +8,12 @@ cd GLM-training
 pip install -e .
 pip install git+https://github.com/huggingface/transformers.git
 pip install git+https://github.com/huggingface/diffusers.git
+
+# Optional (Linux/Mac only, not required on Windows):
+pip install -r requirements-optional.txt
 ```
+
+**Windows Users:** Skip `requirements-optional.txt` if you encounter errors with `aio.lib` or `cufile.lib`.
 
 ## Basic Commands
 
@@ -138,6 +143,12 @@ tail -f logs/train_*.log
 ```
 
 ## Troubleshooting
+
+### Windows Installation Error (aio.lib/cufile.lib)
+- **Error**: `LINK : fatal error LNK1181: cannot open input file 'aio.lib'` or `'cufile.lib'`
+- **Cause**: The `bitsandbytes` package doesn't support Windows
+- **Solution**: Use the main `requirements.txt` only, skip `requirements-optional.txt`
+- **Note**: `bitsandbytes` is not required for core functionality
 
 ### OOM Error
 - Reduce `batch_size` to 1
