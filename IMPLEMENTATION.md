@@ -258,7 +258,10 @@ Core dependencies:
 - Diffusers ≥ 0.27.0
 - Accelerate ≥ 0.20.0
 
-See `requirements.txt` for complete list.
+Optional dependencies:
+- bitsandbytes ≥ 0.41.0 (Linux/Mac only, for 8-bit/4-bit quantization)
+
+See `requirements.txt` for complete list. Optional dependencies are in `requirements-optional.txt`.
 
 ## Design Decisions
 
@@ -285,7 +288,7 @@ Potential additions (see CONTRIBUTING.md):
 - Hyperparameter search utilities
 - Better visualization tools
 - Integration with more logging platforms
-- Quantization support (8-bit, 4-bit)
+- Quantization support (8-bit, 4-bit) - Note: bitsandbytes is available as an optional dependency for Linux/Mac users
 
 ## Testing Status
 
