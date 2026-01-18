@@ -1,7 +1,7 @@
 """
 Reward-based trainer using GRPO (Group Relative Policy Optimization).
 """
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
@@ -141,7 +141,7 @@ class RewardTrainer(BaseTrainer):
         prompts: List[str],
         source_images: Optional[List[Image.Image]] = None,
         num_samples: int = 1,
-    ) -> tuple[List[torch.Tensor], List[torch.Tensor]]:
+    ) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
         """
         Generate latent samples with log probabilities for GRPO training.
         
