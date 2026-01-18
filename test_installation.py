@@ -260,9 +260,10 @@ def main():
     else:
         print("\n✗ Some critical checks failed. Please fix the issues above.")
         print("\nInstallation instructions:")
-        print("pip install -e .")
-        print("pip install git+https://github.com/huggingface/transformers.git")
-        print("pip install git+https://github.com/huggingface/diffusers.git")
+        print("# Install PyTorch with CUDA support (adjust URL for your CUDA version)")
+        print("pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121")
+        print("# Install all dependencies (includes git-based transformers and diffusers)")
+        print("pip install -r requirements.txt")
         return 1
 
 

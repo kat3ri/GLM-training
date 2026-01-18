@@ -25,12 +25,12 @@ GLM-Image uses a hybrid autoregressive + diffusion decoder architecture:
 git clone https://github.com/kat3ri/GLM-training.git
 cd GLM-training
 
-# Install dependencies
-pip install -r requirements.txt
+# Install PyTorch with CUDA support (adjust URL for your CUDA version)
+# Example for CUDA 12.1 (check the official site for the exact command for your CUDA version)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# Install transformers and diffusers from source (required for GLM-Image)
-pip install git+https://github.com/huggingface/transformers.git
-pip install git+https://github.com/huggingface/diffusers.git
+# Install all dependencies (includes git-based transformers and diffusers)
+pip install -r requirements.txt
 
 # Optional: Install additional dependencies (Linux/Mac only)
 # Note: bitsandbytes may not work on Windows

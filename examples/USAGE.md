@@ -9,12 +9,12 @@ This guide provides practical examples of using the GLM-Image training framework
 git clone https://github.com/kat3ri/GLM-training.git
 cd GLM-training
 
-# Install dependencies
-pip install -e .
+# Install PyTorch with CUDA support (adjust URL for your CUDA version)
+# Example for CUDA 12.1 (check the official site for the exact command for your CUDA version)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# Install GLM-Image dependencies
-pip install git+https://github.com/huggingface/transformers.git
-pip install git+https://github.com/huggingface/diffusers.git
+# Install all dependencies (includes git-based transformers and diffusers)
+pip install -e .
 ```
 
 ## Preparing Your Data

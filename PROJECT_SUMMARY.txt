@@ -175,12 +175,12 @@ INSTALLATION
    git clone https://github.com/kat3ri/GLM-training.git
    cd GLM-training
 
-2. Install package:
-   pip install -e .
+2. Install PyTorch with CUDA support (adjust URL for your CUDA version):
+   # Example for CUDA 12.1 (check the official site for the exact command for your CUDA version)
+   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-3. Install dependencies:
-   pip install git+https://github.com/huggingface/transformers.git
-   pip install git+https://github.com/huggingface/diffusers.git
+3. Install package and dependencies:
+   pip install -e .
 
 4. Verify installation:
    python test_installation.py
