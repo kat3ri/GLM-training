@@ -179,6 +179,7 @@ def test_grpo_train_step():
         trainer.mode = "t2i"
         trainer.use_amp = False
         trainer.global_step = 0
+        trainer.training = True
         
         # Create optimizer
         trainer.optimizer = torch.optim.AdamW(
@@ -304,6 +305,7 @@ def test_log_prob_generation():
         trainer.model = create_mock_glm_wrapper("dit")
         trainer.num_samples = 2
         trainer.global_step = 0
+        trainer.training = True
         
         try:
             # Test log prob generation
