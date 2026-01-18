@@ -143,18 +143,27 @@ class GLMImageWrapper(nn.Module):
         Returns:
             List of generated images
         """
-        outputs = self.pipe(
-            prompt=prompts,
-            image=images,
-            height=height,
-            width=width,
-            num_inference_steps=num_inference_steps,
-            guidance_scale=guidance_scale,
-            generator=generator,
-            **kwargs,
-        )
+        # GLM-Image AR model only supports batch_size=1, so process prompts one at a time
+        all_generated_images = []
         
-        return outputs.images
+        for i, prompt in enumerate(prompts):
+            # Get corresponding image if provided
+            image = images[i] if images is not None else None
+            
+            outputs = self.pipe(
+                prompt=[prompt],  # Wrap single prompt in list
+                image=[image] if image is not None else None,
+                height=height,
+                width=width,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                generator=generator,
+                **kwargs,
+            )
+            
+            all_generated_images.extend(outputs.images)
+        
+        return all_generated_images
     
     def forward(
         self,
