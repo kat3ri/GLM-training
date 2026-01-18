@@ -30,7 +30,8 @@ class GLMImageWrapper(nn.Module):
             model_name: Model name or path
             component: Which component to train ("ar", "dit", "both")
             torch_dtype: Data type for model weights
-            device_map: Device mapping strategy
+            device_map: Device mapping strategy. Supported values: "balanced", "cuda", "cpu".
+                       "auto" is automatically mapped to "balanced"
         """
         super().__init__()
         
@@ -42,6 +43,11 @@ class GLMImageWrapper(nn.Module):
         
         self.component = component
         self.torch_dtype = torch_dtype
+        
+        # Map "auto" to supported device_map values
+        # GlmImagePipeline supports: "balanced", "cuda", "cpu"
+        if device_map == "auto":
+            device_map = "balanced"
         
         # Load the pipeline
         self.pipe = GlmImagePipeline.from_pretrained(
