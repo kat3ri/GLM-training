@@ -1,0 +1,142 @@
+# Image-to-Image Training Configuration
+
+# Model Configuration
+model:
+  name: "zai-org/GLM-Image"
+  component: "both"  # Options: "ar" (autoregressive only), "dit" (decoder only), "both"
+  torch_dtype: "bfloat16"
+  device_map: "auto"
+  
+  # Autoregressive model settings
+  ar:
+    temperature: 0.9
+    top_p: 0.75
+    do_sample: true
+    
+  # DiT decoder settings
+  dit:
+    num_inference_steps: 50
+    guidance_scale: 1.5
+
+# Training Configuration
+training:
+  mode: "i2i"  # image-to-image mode
+  
+  # Basic training parameters
+  batch_size: 2
+  gradient_accumulation_steps: 4
+  num_epochs: 10
+  max_steps: null  # Set to override num_epochs
+  
+  # Learning rates
+  learning_rate: 1e-5
+  ar_learning_rate: 5e-6  # Separate LR for autoregressive model
+  dit_learning_rate: 1e-5  # Separate LR for DiT decoder
+  
+  # Optimizer settings
+  optimizer: "adamw"
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1e-8
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  
+  # Learning rate schedule
+  lr_scheduler: "cosine"
+  warmup_steps: 500
+  
+  # Memory optimization
+  gradient_checkpointing: true
+  mixed_precision: "bf16"  # Options: "no", "fp16", "bf16"
+  
+  # Reward-based training
+  use_reward: true
+  reward_frequency: 1  # Compute rewards every N steps
+
+# Reward Configuration
+reward:
+  enabled: true
+  target_images_dir: "data/i2i/target_images"
+  
+  # Reward metrics and weights
+  metrics:
+    lpips: 0.35  # Perceptual similarity
+    aesthetic: 0.25  # Aesthetic quality score
+    text_accuracy: 0.25  # Text rendering accuracy
+    structure_preservation: 0.15  # Preserve structure from source image
+    
+  # GRPO (Group Relative Policy Optimization) settings
+  grpo:
+    num_samples: 4  # Number of samples per prompt for GRPO
+    kl_coef: 0.05  # KL divergence coefficient
+    clip_range: 0.2  # PPO-style clipping range
+    
+  # Component-specific reward settings
+  ar_reward_weight: 1.0  # Weight for AR component rewards
+  dit_reward_weight: 1.0  # Weight for DiT component rewards
+
+# Data Configuration
+data:
+  # Dataset paths
+  source_images_dir: "data/i2i/source_images"
+  prompts_file: "data/i2i/prompts.txt"
+  target_images_dir: "data/i2i/target_images"
+  
+  # Data loading
+  num_workers: 4
+  shuffle: true
+  pin_memory: true
+  
+  # Data augmentation for i2i
+  augmentation:
+    enabled: true
+    random_flip: true
+    random_crop: false
+    color_jitter: false
+    
+  # Image settings
+  image_size:
+    height: 1024  # Must be divisible by 32
+    width: 1024   # Must be divisible by 32
+
+# Distributed Training Configuration
+distributed:
+  enabled: true
+  backend: "nccl"  # Options: "nccl", "gloo"
+  find_unused_parameters: false
+
+# Logging Configuration
+logging:
+  log_dir: "logs"
+  log_interval: 10  # Log every N steps
+  save_interval: 500  # Save checkpoint every N steps
+  eval_interval: 100  # Evaluate every N steps
+  
+  # Logging backends
+  use_tensorboard: true
+  use_wandb: false
+  wandb_project: "glm-image-i2i-training"
+  wandb_entity: null
+  
+  # Image logging
+  log_images: true
+  num_log_images: 4  # Number of images to log
+  log_source_images: true  # Also log source images
+
+# Checkpoint Configuration
+checkpoint:
+  save_dir: "checkpoints"
+  resume_from: null  # Path to checkpoint to resume from
+  save_total_limit: 3  # Keep only N most recent checkpoints
+  save_optimizer: true
+
+# Evaluation Configuration
+evaluation:
+  enabled: true
+  eval_source_images_dir: "data/i2i/eval_source_images"
+  eval_prompts_file: "data/i2i/eval_prompts.txt"
+  eval_target_images_dir: "data/i2i/eval_target_images"
+  num_eval_samples: 10
+
+# Seed for reproducibility
+seed: 42
