@@ -39,7 +39,7 @@ def init_distributed(backend="nccl"):
     """
     rank, world_size, local_rank = setup_distributed()
     
-    if world_size > 1:
+    if world_size > 1 and not dist.is_initialized():
         torch.cuda.set_device(local_rank)
         dist.init_process_group(backend=backend)
         

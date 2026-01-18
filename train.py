@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 
 from glm_training.trainers import RewardTrainer
 from glm_training.data import T2IDataset, I2IDataset, collate_t2i, collate_i2i
-from glm_training.utils import is_main_process
+from glm_training.utils import is_main_process, init_distributed, cleanup_distributed
 
 
 def parse_args():
@@ -129,6 +129,10 @@ def main():
     if args.train_both:
         config["model"]["component"] = "both"
     
+    # Initialize distributed training if enabled
+    if config["distributed"]["enabled"]:
+        init_distributed(backend=config["distributed"]["backend"])
+    
     mode = config["training"]["mode"]
     
     if is_main_process():
@@ -180,7 +184,12 @@ def main():
     trainer = RewardTrainer(config)
     
     # Start training
-    trainer.train(train_loader, eval_loader)
+    try:
+        trainer.train(train_loader, eval_loader)
+    finally:
+        # Cleanup distributed training if it was enabled
+        if config["distributed"]["enabled"]:
+            cleanup_distributed()
 
 
 if __name__ == "__main__":
