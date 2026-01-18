@@ -29,15 +29,15 @@ training:
   max_steps: null  # Set to override num_epochs
   
   # Learning rates
-  learning_rate: 0.00001
-  ar_learning_rate: 0.000005  # Separate LR for autoregressive model
-  dit_learning_rate: 0.00001  # Separate LR for DiT decoder
+  learning_rate: !!float 1e-5
+  ar_learning_rate: !!float 5e-6  # Separate LR for autoregressive model
+  dit_learning_rate: !!float 1e-5  # Separate LR for DiT decoder
   
   # Optimizer settings
   optimizer: "adamw"
   adam_beta1: 0.9
   adam_beta2: 0.999
-  adam_epsilon: 0.00000001
+  adam_epsilon: !!float 1e-8
   weight_decay: 0.01
   max_grad_norm: 1.0
   
