@@ -51,8 +51,8 @@ class GLMImageWrapper(nn.Module):
         )
         
         # Extract components
-        self.ar_model = self.pipe.transformer  # Autoregressive model
-        self.dit_model = self.pipe.unet  # DiT decoder
+        self.ar_model = self.pipe.vision_language_encoder  # Autoregressive model
+        self.dit_model = self.pipe.transformer  # DiT decoder
         self.vae = self.pipe.vae
         self.tokenizer = self.pipe.tokenizer
         

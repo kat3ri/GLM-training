@@ -4,6 +4,7 @@ Image-to-Image dataset for GLM-Image training.
 from pathlib import Path
 from typing import Optional, List, Tuple
 
+import numpy as np
 import torch
 from torch.utils.data import Dataset
 from PIL import Image
@@ -150,15 +151,13 @@ class I2IDataset(Dataset):
             source_image = self.transform(source_image)
             target_image = self.transform(target_image)
         else:
-            # Convert to tensor
-            source_image = torch.from_numpy(
-                torch.tensor(source_image).numpy()
-            ).float() / 255.0
+            # Convert PIL Images to tensors
+            source_image = np.array(source_image)  # PIL Image to numpy array
+            source_image = torch.from_numpy(source_image).float() / 255.0
             source_image = source_image.permute(2, 0, 1)  # HWC -> CHW
             
-            target_image = torch.from_numpy(
-                torch.tensor(target_image).numpy()
-            ).float() / 255.0
+            target_image = np.array(target_image)  # PIL Image to numpy array
+            target_image = torch.from_numpy(target_image).float() / 255.0
             target_image = target_image.permute(2, 0, 1)  # HWC -> CHW
         
         return {
