@@ -19,7 +19,15 @@ def check_file_uses_is_initialized(file_path):
     has_is_initialized_check = 'if dist.is_initialized():' in content and 'DistributedSampler' in content
     
     # Check that it doesn't use the old config check for DistributedSampler
-    has_old_check = 'if config["distributed"]["enabled"]:' in content and 'DistributedSampler' in content.split('if config["distributed"]["enabled"]:')[1].split('\n')[0:10]
+    # Look for the old pattern by checking if both exist and if they're close together
+    has_old_check = False
+    if 'if config["distributed"]["enabled"]:' in content:
+        # Check if DistributedSampler appears near the old config check
+        old_check_index = content.find('if config["distributed"]["enabled"]:')
+        sampler_index = content.find('DistributedSampler', old_check_index)
+        # If DistributedSampler is within 500 characters after the old check, it's likely the old pattern
+        if sampler_index != -1 and (sampler_index - old_check_index) < 500:
+            has_old_check = True
     
     return has_dist_import, has_is_initialized_check, has_old_check
 
@@ -68,10 +76,11 @@ def test_training_scripts():
         if 'if dist.is_initialized():' in content:
             # Find the line after this check
             lines = content.split('\n')
+            lines_to_check = 5  # Number of lines to check after the condition
             for i, line in enumerate(lines):
                 if 'if dist.is_initialized():' in line:
                     # Check next few lines for DistributedSampler
-                    next_lines = '\n'.join(lines[i:i+5])
+                    next_lines = '\n'.join(lines[i:i+lines_to_check])
                     if 'DistributedSampler' in next_lines:
                         print(f"  ✓ Correct pattern: dist.is_initialized() -> DistributedSampler")
                         break
