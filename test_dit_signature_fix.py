@@ -121,7 +121,7 @@ def test_argument_values():
         content = f.read()
     
     checks = {
-        'prior_token_drop': r'prior_token_drop\s*=\s*(0\.\d+|[\d.]+)',
+        'prior_token_drop': r'prior_token_drop\s*=\s*(0\.[0-9]+|1\.0|0)',  # Valid probability [0, 1]
         'target_size': r'target_size\s*=\s*\([^)]+\)',
         'crop_coords': r'crop_coords\s*=\s*\([^)]+\)',
     }
