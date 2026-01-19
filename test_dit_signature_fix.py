@@ -22,7 +22,7 @@ def test_dit_model_has_required_arguments():
     
     print(f"\nFound {len(matches)} dit_model call(s)")
     
-    required_args = ['prior_token_drop', 'height', 'width', 'crop_coords']
+    required_args = ['prior_token_drop', 'height', 'width', 'crop_top', 'crop_left']
     all_correct = True
     
     for i, match in enumerate(matches, 1):
@@ -33,22 +33,19 @@ def test_dit_model_has_required_arguments():
         call_without_sample = call.replace('.sample', '')
         
         # Check for each required argument (as variable names in the call)
-        # Note: height and width are passed as variables, not the string "height"/"width"
-        # So we check if they appear as arguments in the call
         missing_args = []
         
-        # For prior_token_drop and crop_coords, check they're mentioned
+        # Check all required variables are present
         if 'prior_token_drop' not in call:
             missing_args.append('prior_token_drop')
-        if 'crop_coords' not in call:
-            missing_args.append('crop_coords')
-        
-        # Check that height and width appear as separate arguments
-        # (not as part of target_size tuple)
         if 'height,' not in call and 'height\n' not in call:
             missing_args.append('height')
         if 'width,' not in call and 'width\n' not in call:
             missing_args.append('width')
+        if 'crop_top' not in call:
+            missing_args.append('crop_top')
+        if 'crop_left' not in call:
+            missing_args.append('crop_left')
         
         if missing_args:
             print(f"✗ FAILED: Missing arguments: {', '.join(missing_args)}")
@@ -98,7 +95,6 @@ def test_arguments_defined_before_use():
         
         required_vars = {
             'prior_token_drop': False,
-            'crop_coords': False
         }
         
         for var in required_vars:
@@ -109,6 +105,12 @@ def test_arguments_defined_before_use():
         # Check if they're available in a broader context
         if 'height' not in context or 'width' not in context:
             print(f"⚠ WARNING: height/width may not be in immediate context (should be computed earlier)")
+        
+        # Check for crop_top and crop_left
+        if 'crop_top' not in context:
+            print(f"⚠ WARNING: crop_top may not be in immediate context")
+        if 'crop_left' not in context:
+            print(f"⚠ WARNING: crop_left may not be in immediate context")
                 
         missing_vars = [v for v, found in required_vars.items() if not found]
         
@@ -138,7 +140,8 @@ def test_argument_values():
     
     checks = {
         'prior_token_drop': r'prior_token_drop\s*=\s*(0\.[0-9]+|1\.0|0)',  # Valid probability [0, 1]
-        'crop_coords': r'crop_coords\s*=\s*\([^)]+\)',
+        'crop_top': r'crop_top\s*=\s*[0-9]+',
+        'crop_left': r'crop_left\s*=\s*[0-9]+',
     }
     
     all_correct = True

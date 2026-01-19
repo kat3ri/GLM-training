@@ -214,15 +214,16 @@ class RewardTrainer(BaseTrainer):
                 # Prepare additional required arguments for DiT model
                 # prior_token_drop: probability of dropping prior tokens (regularization)
                 prior_token_drop = 0.1
-                # crop_coords: coordinates for image crop (using full image)
-                crop_coords = (0, 0)
+                # crop coordinates: top-left corner for image crop (using full image)
+                crop_top = 0
+                crop_left = 0
                 
                 # Predict noise with DiT model
                 with torch.set_grad_enabled(self.model.training):
                     try:
                         # Call DiT model to predict noise
                         # Signature: forward(hidden_states, encoder_hidden_states, prior_token_drop, 
-                        #                    timestep, height, width, crop_coords)
+                        #                    timestep, height, width, crop_top, crop_left)
                         noise_pred = self.model.dit_model(
                             latents,
                             prompt_embeds,
@@ -230,7 +231,8 @@ class RewardTrainer(BaseTrainer):
                             t,
                             height,
                             width,
-                            crop_coords,
+                            crop_top,
+                            crop_left,
                         ).sample
                         
                         # Compute log probability of this action (noise prediction)
@@ -387,12 +389,13 @@ class RewardTrainer(BaseTrainer):
             
             # Prepare additional required arguments for DiT model
             prior_token_drop = 0.1
-            crop_coords = (0, 0)
+            crop_top = 0
+            crop_left = 0
             
             try:
                 # Predict noise with current policy (with gradients)
                 # Signature: forward(hidden_states, encoder_hidden_states, prior_token_drop,
-                #                    timestep, height, width, crop_coords)
+                #                    timestep, height, width, crop_top, crop_left)
                 noise_pred = self.model.dit_model(
                     latents,
                     prompt_embeds,
@@ -400,7 +403,8 @@ class RewardTrainer(BaseTrainer):
                     timestep,
                     height,
                     width,
-                    crop_coords,
+                    crop_top,
+                    crop_left,
                 ).sample
                 
                 # Compute log probability (Gaussian assumption)

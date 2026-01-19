@@ -2,34 +2,41 @@
 
 ## Problem Statement
 
-The DiT model (GlmImageTransformer2DModel) was being called with insufficient arguments, resulting in the error:
+The DiT model (GlmImageTransformer2DModel) was being called with insufficient arguments, resulting in errors:
 
+**Initial error:**
 ```
 Warning: DiT model call failed: GlmImageTransformer2DModel.forward() missing 4 required positional arguments: 'prior_token_drop', 'timestep', 'target_size', and 'crop_coords'
 ```
 
-**Update:** After initial fix, a follow-up error indicated:
+**Second error (after partial fix):**
 ```
 Warning: DiT model call failed: GlmImageTransformer2DModel.forward() missing 1 required positional argument: 'crop_coords'
 ```
 
-This revealed that `target_size` needed to be unpacked as separate `height` and `width` arguments.
+**Third error (matrix shape mismatch):**
+```
+Warning: DiT model call failed: mat1 and mat2 shapes cannot be multiplied (4096x16 and 64x4096)
+```
+
+This revealed that both `target_size` AND `crop_coords` needed to be unpacked as separate scalar arguments.
 
 ## Root Cause
 
-The DiT model's `forward()` method requires 7 positional arguments, but only 3 were being passed:
+The DiT model's `forward()` method requires 8 positional arguments, but only 3 were being passed:
 - ❌ Old signature: `dit_model(latents, prompt_embeds, timestep)`
-- ✅ Required signature: `dit_model(hidden_states, encoder_hidden_states, prior_token_drop, timestep, height, width, crop_coords)`
+- ✅ Required signature: `dit_model(hidden_states, encoder_hidden_states, prior_token_drop, timestep, height, width, crop_top, crop_left)`
 
 ## Solution
 
 Updated both DiT model calls in `glm_training/trainers/reward_trainer.py` to include all required arguments:
 
-### Location 1: Line 226 (in `_generate_latents_with_log_probs` method)
+### Location 1: Line 227 (in `_generate_latents_with_log_probs` method)
 ```python
 # Prepare additional required arguments for DiT model
 prior_token_drop = 0.1  # probability of dropping prior tokens (regularization)
-crop_coords = (0, 0)  # coordinates for image crop (using full image)
+crop_top = 0  # top coordinate for image crop
+crop_left = 0  # left coordinate for image crop
 
 noise_pred = self.model.dit_model(
     latents,
@@ -38,15 +45,17 @@ noise_pred = self.model.dit_model(
     t,
     height,
     width,
-    crop_coords,
+    crop_top,
+    crop_left,
 ).sample
 ```
 
-### Location 2: Line 396 (in `train_step` method)
+### Location 2: Line 399 (in `train_step` method)
 ```python
 # Prepare additional required arguments for DiT model
 prior_token_drop = 0.1
-crop_coords = (0, 0)
+crop_top = 0
+crop_left = 0
 
 noise_pred = self.model.dit_model(
     latents,
@@ -55,7 +64,8 @@ noise_pred = self.model.dit_model(
     timestep,
     height,
     width,
-    crop_coords,
+    crop_top,
+    crop_left,
 ).sample
 ```
 
@@ -72,9 +82,10 @@ noise_pred = self.model.dit_model(
    - VAE downsampling factor is 8
    - **Important:** These must be passed as separate arguments, not as a tuple
 
-3. **`crop_coords` = (0, 0)**
-   - Crop coordinates for the image region being processed
+3. **`crop_top` = 0 and `crop_left` = 0** (passed separately, not as tuple)
+   - Top-left corner coordinates for image cropping
    - (0, 0) indicates processing the full image without cropping
+   - **Important:** Like height/width, these must also be unpacked as separate scalar arguments
 
 ## Validation
 
