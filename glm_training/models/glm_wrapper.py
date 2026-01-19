@@ -3,8 +3,10 @@ GLM-Image model wrapper for training.
 """
 import torch
 import torch.nn as nn
-from typing import Optional, List, Union
+import torch.nn.functional as F
+from typing import Optional, List, Union, Dict, Any
 from PIL import Image
+import numpy as np
 
 try:
     from diffusers.pipelines.glm_image import GlmImagePipeline
@@ -253,3 +255,156 @@ class GLMImageWrapper(nn.Module):
             state_dict.update({f"dit_model.{k}": v for k, v in dit_state.items()})
         
         return state_dict
+    
+    # ========================================================================
+    # GRPO-specific methods (Day 3)
+    # ========================================================================
+    
+    def compute_sequence_logprobs(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Compute sequence log probabilities from token IDs.
+        
+        This is used for GRPO training to compute policy gradients.
+        
+        Args:
+            input_ids: Token IDs [batch_size, seq_len]
+            attention_mask: Attention mask [batch_size, seq_len]
+            
+        Returns:
+            log_probs: Sequence log probabilities [batch_size]
+        """
+        # Forward through AR model
+        outputs = self.ar_model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+        )
+        logits = outputs.logits
+        
+        # Shift for next-token prediction
+        shift_logits = logits[:, :-1, :].contiguous()
+        shift_labels = input_ids[:, 1:].contiguous()
+        
+        # Compute log probabilities
+        log_probs = F.log_softmax(shift_logits, dim=-1)
+        token_log_probs = torch.gather(
+            log_probs, -1, shift_labels.unsqueeze(-1)
+        ).squeeze(-1)
+        
+        # Apply mask and normalize
+        if attention_mask is not None:
+            mask = attention_mask[:, 1:].contiguous()
+            token_log_probs = token_log_probs * mask
+            sequence_log_probs = token_log_probs.sum(dim=-1) / (mask.sum(dim=-1) + 1e-6)
+        else:
+            sequence_log_probs = token_log_probs.mean(dim=-1)
+        
+        return sequence_log_probs
+    
+    @torch.no_grad()
+    def generate_with_tracking(
+        self,
+        prompts: List[str],
+        images: Optional[List[Image.Image]] = None,
+        height: int = 1024,
+        width: int = 1024,
+        num_inference_steps: int = 50,
+        guidance_scale: float = 1.5,
+        **generation_kwargs,
+    ) -> Dict[str, Any]:
+        """
+        Generate images and track intermediate values for GRPO.
+        
+        This method generates images while tracking log probabilities
+        needed for GRPO policy gradient training.
+        
+        Args:
+            prompts: Text prompts
+            images: Source images for i2i (optional)
+            height: Image height
+            width: Image width
+            num_inference_steps: Number of inference steps
+            guidance_scale: Guidance scale
+            **generation_kwargs: Additional generation arguments
+            
+        Returns:
+            Dictionary with:
+                - images: Generated PIL images
+                - token_ids: Generated token IDs from AR model
+                - log_probs: Sequence log probabilities
+                - image_tensors: Image tensors [N, C, H, W] normalized to [0, 1]
+        """
+        # Tokenize prompts
+        inputs = self.tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding=True,
+        )
+        input_ids = inputs["input_ids"].to(self.ar_model.device)
+        attention_mask = inputs["attention_mask"].to(self.ar_model.device)
+        
+        # Generate with AR model to get token IDs
+        # Note: For GLM-Image, the AR model generates visual tokens
+        generated_ids = self.ar_model.generate(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            max_new_tokens=generation_kwargs.get("max_new_tokens", 512),
+            do_sample=generation_kwargs.get("do_sample", True),
+            temperature=generation_kwargs.get("temperature", 0.9),
+            top_p=generation_kwargs.get("top_p", 0.95),
+        )
+        
+        # Compute log probs for generated sequence
+        log_probs = self.compute_sequence_logprobs(
+            generated_ids,
+            attention_mask=torch.ones_like(generated_ids),
+        )
+        
+        # Generate images using the full pipeline
+        # This uses the visual tokens from AR model + DiT decoder
+        generated_images = self.generate(
+            prompts=prompts,
+            images=images,
+            height=height,
+            width=width,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+        )
+        
+        # Convert images to tensors for reward computation
+        image_tensors = self._images_to_tensors(generated_images)
+        
+        return {
+            "images": generated_images,
+            "token_ids": generated_ids,
+            "log_probs": log_probs,
+            "image_tensors": image_tensors,
+        }
+    
+    def _images_to_tensors(self, images: List[Image.Image]) -> torch.Tensor:
+        """
+        Convert PIL images to tensor format.
+        
+        Args:
+            images: List of PIL images
+            
+        Returns:
+            Tensor of shape [N, C, H, W] normalized to [0, 1]
+        """
+        tensors = []
+        for img in images:
+            # Convert to RGB if needed
+            if img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Convert to numpy array and normalize
+            img_array = np.array(img).astype(np.float32) / 255.0
+            
+            # Convert to tensor and permute to [C, H, W]
+            img_tensor = torch.from_numpy(img_array).permute(2, 0, 1)
+            tensors.append(img_tensor)
+        
+        return torch.stack(tensors)
