@@ -1,0 +1,73 @@
+# GRPO Training Configuration for GLM-Image
+# Clean minimal configuration for GRPO training
+
+# Model Configuration
+model:
+  name: "zai-org/GLM-Image"
+  component: "both"  # Options: "ar" (autoregressive only), "dit" (decoder only), "both"
+  torch_dtype: "bfloat16"
+  device_map: "auto"
+  
+  # DiT decoder settings (used during generation)
+  dit:
+    num_inference_steps: 50
+    guidance_scale: 1.5
+
+# Training Configuration
+training:
+  mode: "t2i"  # Options: "t2i" (text-to-image), "i2i" (image-to-image)
+  
+  # Basic training parameters
+  # Note: batch_size must be 1 due to AR model limitations
+  batch_size: 1
+  max_steps: 1000  # Total training steps
+  
+  # Learning rate
+  learning_rate: !!float 5e-6  # Lower LR for GRPO (policy gradient)
+  
+  # Gradient clipping
+  max_grad_norm: 1.0
+
+# GRPO-Specific Configuration
+reward:
+  # Reward function type
+  use_advanced: false  # Set to true to use LPIPS + aesthetic + text accuracy
+  
+  # Advanced reward metrics (only if use_advanced=true)
+  metrics:
+    lpips: 0.4  # Perceptual similarity weight
+    aesthetic: 0.3  # Aesthetic quality score weight
+    text_accuracy: 0.3  # Text rendering accuracy weight
+  
+  # GRPO hyperparameters
+  grpo:
+    num_samples: 4  # Number of samples per prompt (group size)
+    clip_range: 0.2  # PPO-style clipping epsilon
+
+# Data Configuration
+data:
+  # Dataset paths
+  prompts_file: "data/t2i/prompts.txt"
+  target_images_dir: "data/t2i/target_images"
+  
+  # For i2i mode (uncomment if mode="i2i")
+  # source_images_dir: "data/i2i/source_images"
+  
+  # Data loading
+  num_workers: 4
+  shuffle: true
+  pin_memory: true
+  
+  # Image settings
+  image_size:
+    height: 1024  # Must be divisible by 32
+    width: 1024   # Must be divisible by 32
+
+# Seed for reproducibility
+seed: 42
+
+# Notes:
+# - GRPO uses group-based sampling: generates num_samples images per prompt
+# - Advantages computed as z-score within each group (no value function needed)
+# - Memory efficient: ~80GB VRAM for full model with group_size=4
+# - Use simple reward (MSE) by default, advanced rewards for production
