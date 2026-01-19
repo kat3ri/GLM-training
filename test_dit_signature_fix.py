@@ -13,7 +13,7 @@ def test_dit_model_has_required_arguments():
     print("=" * 80)
     
     # Read the reward_trainer.py file
-    with open('/home/runner/work/GLM-training/GLM-training/glm_training/trainers/reward_trainer.py', 'r') as f:
+    with open('glm_training/trainers/reward_trainer.py', 'r') as f:
         content = f.read()
     
     # Find all dit_model calls
@@ -65,7 +65,7 @@ def test_arguments_defined_before_use():
     print("Testing Arguments Are Defined Before Use")
     print("=" * 80)
     
-    with open('/home/runner/work/GLM-training/GLM-training/glm_training/trainers/reward_trainer.py', 'r') as f:
+    with open('glm_training/trainers/reward_trainer.py', 'r') as f:
         lines = f.readlines()
     
     # Find dit_model call locations
@@ -117,7 +117,7 @@ def test_argument_values():
     print("Testing Argument Values")
     print("=" * 80)
     
-    with open('/home/runner/work/GLM-training/GLM-training/glm_training/trainers/reward_trainer.py', 'r') as f:
+    with open('glm_training/trainers/reward_trainer.py', 'r') as f:
         content = f.read()
     
     checks = {
