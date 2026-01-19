@@ -214,9 +214,13 @@ class RewardTrainer(BaseTrainer):
                 0, 1000, (batch_size,), device=self.device, dtype=torch.long
             )
             
-            # Add noise to latents
+            # Add noise to latents using the scheduler if available
             noise = torch.randn_like(latents)
-            noisy_latents = self._add_noise(latents, noise, timesteps)
+            if hasattr(self.model.pipe, 'scheduler'):
+                noisy_latents = self.model.pipe.scheduler.add_noise(latents, noise, timesteps)
+            else:
+                # Fallback to simple noise schedule
+                noisy_latents = self._add_noise(latents, noise, timesteps)
             
             # Get text embeddings
             text_inputs = self.model.tokenizer(
@@ -230,11 +234,18 @@ class RewardTrainer(BaseTrainer):
                 text_embeds = self.model.ar_model(**text_inputs).last_hidden_state
             
             # Predict noise with DiT model (this HAS gradients when training DiT)
-            model_pred = self.model.dit_model(
-                noisy_latents,
-                timesteps,
-                text_embeds,
-            ).sample
+            # The DiT transformer expects: hidden_states, timestep, encoder_hidden_states
+            model_output = self.model.dit_model(
+                hidden_states=noisy_latents,
+                timestep=timesteps,
+                encoder_hidden_states=text_embeds,
+            )
+            
+            # Extract the prediction
+            if hasattr(model_output, 'sample'):
+                model_pred = model_output.sample
+            else:
+                model_pred = model_output
             
             # Compute denoising loss
             loss = F.mse_loss(model_pred, noise)
