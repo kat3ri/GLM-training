@@ -211,15 +211,27 @@ class RewardTrainer(BaseTrainer):
                 # Expand timestep for batch
                 t = timestep.expand(batch_size)
                 
+                # Prepare additional required arguments for DiT model
+                # prior_token_drop: probability of dropping prior tokens (regularization)
+                prior_token_drop = 0.1
+                # target_size: target dimensions in latent space
+                target_size = (height, width)
+                # crop_coords: coordinates for image crop (using full image)
+                crop_coords = (0, 0)
+                
                 # Predict noise with DiT model
                 with torch.set_grad_enabled(self.model.training):
                     try:
                         # Call DiT model to predict noise
-                        # Signature: forward(hidden_states, encoder_hidden_states, timestep, ...)
+                        # Signature: forward(hidden_states, encoder_hidden_states, prior_token_drop, 
+                        #                    timestep, target_size, crop_coords)
                         noise_pred = self.model.dit_model(
                             latents,
                             prompt_embeds,
+                            prior_token_drop,
                             t,
+                            target_size,
+                            crop_coords,
                         ).sample
                         
                         # Compute log probability of this action (noise prediction)
@@ -374,13 +386,22 @@ class RewardTrainer(BaseTrainer):
             # For efficiency, we compute log prob for a subset of steps
             timestep = torch.tensor([500], device=self.device).expand(batch_size)
             
+            # Prepare additional required arguments for DiT model
+            prior_token_drop = 0.1
+            target_size = (height, width)
+            crop_coords = (0, 0)
+            
             try:
                 # Predict noise with current policy (with gradients)
-                # Signature: forward(hidden_states, encoder_hidden_states, timestep, ...)
+                # Signature: forward(hidden_states, encoder_hidden_states, prior_token_drop,
+                #                    timestep, target_size, crop_coords)
                 noise_pred = self.model.dit_model(
                     latents,
                     prompt_embeds,
+                    prior_token_drop,
                     timestep,
+                    target_size,
+                    crop_coords,
                 ).sample
                 
                 # Compute log probability (Gaussian assumption)
