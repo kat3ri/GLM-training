@@ -76,9 +76,19 @@ def create_mock_glm_wrapper(component="dit"):
     # Mock get_trainable_parameters
     model.get_trainable_parameters = lambda: list(model.dit_model.parameters())
     
-    # Add train/eval methods
-    model.train = Mock()
-    model.eval = Mock()
+    # Add training attribute and train/eval methods
+    model.training = True
+    
+    def mock_train():
+        model.training = True
+        return model
+    
+    def mock_eval():
+        model.training = False
+        return model
+    
+    model.train = mock_train
+    model.eval = mock_eval
     
     return model
 
@@ -179,7 +189,6 @@ def test_grpo_train_step():
         trainer.mode = "t2i"
         trainer.use_amp = False
         trainer.global_step = 0
-        trainer.training = True
         
         # Create optimizer
         trainer.optimizer = torch.optim.AdamW(
@@ -305,7 +314,6 @@ def test_log_prob_generation():
         trainer.model = create_mock_glm_wrapper("dit")
         trainer.num_samples = 2
         trainer.global_step = 0
-        trainer.training = True
         
         try:
             # Test log prob generation

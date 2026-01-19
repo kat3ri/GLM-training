@@ -212,7 +212,7 @@ class RewardTrainer(BaseTrainer):
                 t = timestep.expand(batch_size)
                 
                 # Predict noise with DiT model
-                with torch.set_grad_enabled(self.training):
+                with torch.set_grad_enabled(self.model.training):
                     try:
                         # Call DiT model to predict noise
                         noise_pred = self.model.dit_model(
