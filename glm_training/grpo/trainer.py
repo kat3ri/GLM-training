@@ -2,11 +2,11 @@
 Minimal GRPO trainer - starting from scratch.
 
 Based on nanoGRPO + TRL patterns, but simplified.
-Day 2: Trainer skeleton with placeholders.
+Day 3: Integrated with GLM-Image.
 """
 import torch
 import torch.nn.functional as F
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Optional, Callable, Union
 from PIL import Image
 import numpy as np
 
@@ -17,39 +17,52 @@ class MinimalGRPOTrainer:
     """
     Minimal GRPO trainer - just the essentials.
     
-    Start simple, add features later.
+    Now integrated with GLMImageWrapper for proper generation and log prob tracking.
     
     Args:
-        model: GLM-Image model (or wrapper)
-        tokenizer: Tokenizer for text processing
-        train_dataloader: Training data iterator
+        model: GLMImageWrapper instance
         reward_function: Function that takes (images, targets) -> rewards
+        train_dataloader: Training data iterator
         group_size: Samples per prompt (default: 4)
         clip_range: PPO clipping epsilon (default: 0.2)
         learning_rate: Learning rate (default: 5e-6)
+        height: Image height (default: 1024)
+        width: Image width (default: 1024)
+        num_inference_steps: DiT inference steps (default: 50)
+        guidance_scale: Guidance scale (default: 1.5)
     """
     
     def __init__(
         self,
         model,
-        tokenizer,
-        train_dataloader,
         reward_function: Callable,
+        train_dataloader,
         group_size: int = 4,
         clip_range: float = 0.2,
         learning_rate: float = 5e-6,
+        height: int = 1024,
+        width: int = 1024,
+        num_inference_steps: int = 50,
+        guidance_scale: float = 1.5,
     ):
         """Initialize minimal GRPO trainer."""
         self.model = model
-        self.tokenizer = tokenizer
         self.train_dataloader = train_dataloader
         self.reward_function = reward_function
         self.group_size = group_size
         self.clip_range = clip_range
         
+        # Generation settings
+        self.height = height
+        self.width = width
+        self.num_inference_steps = num_inference_steps
+        self.guidance_scale = guidance_scale
+        
         # Setup optimizer
+        # Get trainable parameters from model
+        trainable_params = model.get_trainable_parameters()
         self.optimizer = torch.optim.AdamW(
-            model.parameters(),
+            trainable_params,
             lr=learning_rate,
             weight_decay=0.01,
         )
@@ -59,96 +72,50 @@ class MinimalGRPOTrainer:
         
     def generate_samples(
         self, 
-        prompts: List[str]
+        prompts: List[str],
+        source_images: Optional[List[Image.Image]] = None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Generate multiple samples per prompt.
+        Generate multiple samples per prompt using GLMImageWrapper.
         
         Args:
             prompts: List of text prompts
+            source_images: Optional source images for i2i mode
             
         Returns:
             images: [batch_size * group_size, C, H, W]
             old_logprobs: [batch_size * group_size]
-            token_ids: [batch_size * group_size, seq_len] - stored for recomputation
+            token_ids: [batch_size * group_size, seq_len]
         """
         # Repeat prompts for group sampling
         repeated_prompts = []
-        for prompt in prompts:
+        repeated_source_images = []
+        
+        for i, prompt in enumerate(prompts):
             repeated_prompts.extend([prompt] * self.group_size)
+            if source_images is not None:
+                repeated_source_images.extend([source_images[i]] * self.group_size)
         
-        # Tokenize
-        inputs = self.tokenizer(
-            repeated_prompts,
-            return_tensors="pt",
-            padding=True,
-        )
-        input_ids = inputs["input_ids"].to(self.device)
+        # Use source images if provided
+        images_to_use = repeated_source_images if source_images is not None else None
         
-        # Generate (no gradients)
+        # Generate with tracking (no gradients)
         with torch.no_grad():
-            # Generate token IDs
-            # TODO: Replace with actual GLM-Image generation
-            generated_ids = self.model.generate(
-                input_ids,
-                max_new_tokens=512,
-                do_sample=True,
-                temperature=0.9,
+            results = self.model.generate_with_tracking(
+                prompts=repeated_prompts,
+                images=images_to_use,
+                height=self.height,
+                width=self.width,
+                num_inference_steps=self.num_inference_steps,
+                guidance_scale=self.guidance_scale,
             )
-            
-            # Compute old log probs (before training)
-            old_logprobs = self._compute_logprobs(generated_ids)
-            
-            # Convert to images
-            # TODO: Replace with actual GLM-Image decoding
-            images = self._ids_to_images(generated_ids)
         
-        return images, old_logprobs, generated_ids
-    
-    def _compute_logprobs(self, input_ids: torch.Tensor) -> torch.Tensor:
-        """
-        Compute sequence log probabilities.
+        # Extract results
+        image_tensors = results["image_tensors"].to(self.device)
+        old_logprobs = results["log_probs"].to(self.device)
+        token_ids = results["token_ids"].to(self.device)
         
-        This is simplified - real version needs proper masking.
-        
-        Args:
-            input_ids: Token IDs [batch_size, seq_len]
-            
-        Returns:
-            log_probs: Sequence log probabilities [batch_size]
-        """
-        outputs = self.model(input_ids)
-        logits = outputs.logits
-        
-        # Shift for next-token prediction
-        shift_logits = logits[:, :-1, :]
-        shift_labels = input_ids[:, 1:]
-        
-        # Compute log probs
-        log_probs = F.log_softmax(shift_logits, dim=-1)
-        token_log_probs = torch.gather(
-            log_probs, -1, shift_labels.unsqueeze(-1)
-        ).squeeze(-1)
-        
-        # Mean over sequence
-        return token_log_probs.mean(dim=-1)
-    
-    def _ids_to_images(self, generated_ids: torch.Tensor) -> torch.Tensor:
-        """
-        Convert generated token IDs to images.
-        
-        This is GLM-Image specific - placeholder for now.
-        TODO: Implement actual GLM-Image decoding pipeline
-        
-        Args:
-            generated_ids: Token IDs [batch_size, seq_len]
-            
-        Returns:
-            images: Image tensors [batch_size, C, H, W]
-        """
-        # Placeholder: return dummy images
-        batch_size = generated_ids.size(0)
-        return torch.randn(batch_size, 3, 1024, 1024, device=self.device)
+        return image_tensors, old_logprobs, token_ids
     
     def train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
         """
@@ -171,8 +138,18 @@ class MinimalGRPOTrainer:
         prompts = batch["prompts"]
         target_images = batch["target_images"].to(self.device)
         
+        # Get source images for i2i mode if present
+        source_images = None
+        if "source_images" in batch:
+            # Convert tensor to PIL images
+            source_images_tensor = batch["source_images"].to(self.device)
+            source_images = []
+            for img_tensor in source_images_tensor:
+                img_np = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
+                source_images.append(Image.fromarray(img_np))
+        
         # Step 1: Generate samples (no gradients)
-        images, old_logprobs, token_ids = self.generate_samples(prompts)
+        images, old_logprobs, token_ids = self.generate_samples(prompts, source_images)
         
         # Step 2: Compute rewards
         # Repeat targets for each sample in the group
@@ -186,7 +163,7 @@ class MinimalGRPOTrainer:
         
         # Step 4: Recompute log probs (with gradients)
         # This allows gradients to flow through the policy
-        new_logprobs = self._compute_logprobs(token_ids)
+        new_logprobs = self.model.compute_sequence_logprobs(token_ids)
         
         # Step 5: Compute GRPO loss
         loss, metrics = compute_grpo_loss(
@@ -199,7 +176,7 @@ class MinimalGRPOTrainer:
         # Step 6: Backward and optimize
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+        torch.nn.utils.clip_grad_norm_(self.model.get_trainable_parameters(), 1.0)
         self.optimizer.step()
         
         # Add reward metrics
