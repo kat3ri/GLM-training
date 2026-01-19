@@ -212,13 +212,14 @@ class RewardTrainer(BaseTrainer):
                 t = timestep.expand(batch_size)
                 
                 # Predict noise with DiT model
-                with torch.set_grad_enabled(self.training):
+                with torch.set_grad_enabled(self.model.training):
                     try:
                         # Call DiT model to predict noise
+                        # Signature: forward(hidden_states, encoder_hidden_states, timestep, ...)
                         noise_pred = self.model.dit_model(
                             latents,
+                            prompt_embeds,
                             t,
-                            encoder_hidden_states=prompt_embeds,
                         ).sample
                         
                         # Compute log probability of this action (noise prediction)
@@ -375,10 +376,11 @@ class RewardTrainer(BaseTrainer):
             
             try:
                 # Predict noise with current policy (with gradients)
+                # Signature: forward(hidden_states, encoder_hidden_states, timestep, ...)
                 noise_pred = self.model.dit_model(
                     latents,
+                    prompt_embeds,
                     timestep,
-                    encoder_hidden_states=prompt_embeds,
                 ).sample
                 
                 # Compute log probability (Gaussian assumption)
