@@ -8,21 +8,27 @@ The DiT model (GlmImageTransformer2DModel) was being called with insufficient ar
 Warning: DiT model call failed: GlmImageTransformer2DModel.forward() missing 4 required positional arguments: 'prior_token_drop', 'timestep', 'target_size', and 'crop_coords'
 ```
 
+**Update:** After initial fix, a follow-up error indicated:
+```
+Warning: DiT model call failed: GlmImageTransformer2DModel.forward() missing 1 required positional argument: 'crop_coords'
+```
+
+This revealed that `target_size` needed to be unpacked as separate `height` and `width` arguments.
+
 ## Root Cause
 
-The DiT model's `forward()` method requires 6 positional arguments, but only 3 were being passed:
+The DiT model's `forward()` method requires 7 positional arguments, but only 3 were being passed:
 - ❌ Old signature: `dit_model(latents, prompt_embeds, timestep)`
-- ✅ Required signature: `dit_model(hidden_states, encoder_hidden_states, prior_token_drop, timestep, target_size, crop_coords)`
+- ✅ Required signature: `dit_model(hidden_states, encoder_hidden_states, prior_token_drop, timestep, height, width, crop_coords)`
 
 ## Solution
 
 Updated both DiT model calls in `glm_training/trainers/reward_trainer.py` to include all required arguments:
 
-### Location 1: Line 228 (in `_generate_latents_with_log_probs` method)
+### Location 1: Line 226 (in `_generate_latents_with_log_probs` method)
 ```python
 # Prepare additional required arguments for DiT model
 prior_token_drop = 0.1  # probability of dropping prior tokens (regularization)
-target_size = (height, width)  # target dimensions in latent space
 crop_coords = (0, 0)  # coordinates for image crop (using full image)
 
 noise_pred = self.model.dit_model(
@@ -30,16 +36,16 @@ noise_pred = self.model.dit_model(
     prompt_embeds,
     prior_token_drop,
     t,
-    target_size,
+    height,
+    width,
     crop_coords,
 ).sample
 ```
 
-### Location 2: Line 398 (in `train_step` method)
+### Location 2: Line 396 (in `train_step` method)
 ```python
 # Prepare additional required arguments for DiT model
 prior_token_drop = 0.1
-target_size = (height, width)
 crop_coords = (0, 0)
 
 noise_pred = self.model.dit_model(
@@ -47,7 +53,8 @@ noise_pred = self.model.dit_model(
     prompt_embeds,
     prior_token_drop,
     timestep,
-    target_size,
+    height,
+    width,
     crop_coords,
 ).sample
 ```
@@ -59,10 +66,11 @@ noise_pred = self.model.dit_model(
    - Acts as regularization to prevent overfitting
    - Standard value: 0.1 (10% dropout)
 
-2. **`target_size` = (height, width)**
+2. **`height` and `width`** (passed separately, not as tuple)
    - Target image dimensions in latent space
-   - Calculated from config: `(height // 8, width // 8)`
+   - Calculated from config: `height // 8` and `width // 8`
    - VAE downsampling factor is 8
+   - **Important:** These must be passed as separate arguments, not as a tuple
 
 3. **`crop_coords` = (0, 0)**
    - Crop coordinates for the image region being processed

@@ -214,8 +214,6 @@ class RewardTrainer(BaseTrainer):
                 # Prepare additional required arguments for DiT model
                 # prior_token_drop: probability of dropping prior tokens (regularization)
                 prior_token_drop = 0.1
-                # target_size: target dimensions in latent space
-                target_size = (height, width)
                 # crop_coords: coordinates for image crop (using full image)
                 crop_coords = (0, 0)
                 
@@ -224,13 +222,14 @@ class RewardTrainer(BaseTrainer):
                     try:
                         # Call DiT model to predict noise
                         # Signature: forward(hidden_states, encoder_hidden_states, prior_token_drop, 
-                        #                    timestep, target_size, crop_coords)
+                        #                    timestep, height, width, crop_coords)
                         noise_pred = self.model.dit_model(
                             latents,
                             prompt_embeds,
                             prior_token_drop,
                             t,
-                            target_size,
+                            height,
+                            width,
                             crop_coords,
                         ).sample
                         
@@ -388,19 +387,19 @@ class RewardTrainer(BaseTrainer):
             
             # Prepare additional required arguments for DiT model
             prior_token_drop = 0.1
-            target_size = (height, width)
             crop_coords = (0, 0)
             
             try:
                 # Predict noise with current policy (with gradients)
                 # Signature: forward(hidden_states, encoder_hidden_states, prior_token_drop,
-                #                    timestep, target_size, crop_coords)
+                #                    timestep, height, width, crop_coords)
                 noise_pred = self.model.dit_model(
                     latents,
                     prompt_embeds,
                     prior_token_drop,
                     timestep,
-                    target_size,
+                    height,
+                    width,
                     crop_coords,
                 ).sample
                 

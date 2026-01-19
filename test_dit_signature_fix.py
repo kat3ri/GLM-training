@@ -22,7 +22,7 @@ def test_dit_model_has_required_arguments():
     
     print(f"\nFound {len(matches)} dit_model call(s)")
     
-    required_args = ['prior_token_drop', 'target_size', 'crop_coords']
+    required_args = ['prior_token_drop', 'height', 'width', 'crop_coords']
     all_correct = True
     
     for i, match in enumerate(matches, 1):
@@ -32,11 +32,23 @@ def test_dit_model_has_required_arguments():
         # Extract just the part before .sample for clearer output
         call_without_sample = call.replace('.sample', '')
         
-        # Check for each required argument
+        # Check for each required argument (as variable names in the call)
+        # Note: height and width are passed as variables, not the string "height"/"width"
+        # So we check if they appear as arguments in the call
         missing_args = []
-        for arg in required_args:
-            if arg not in call:
-                missing_args.append(arg)
+        
+        # For prior_token_drop and crop_coords, check they're mentioned
+        if 'prior_token_drop' not in call:
+            missing_args.append('prior_token_drop')
+        if 'crop_coords' not in call:
+            missing_args.append('crop_coords')
+        
+        # Check that height and width appear as separate arguments
+        # (not as part of target_size tuple)
+        if 'height,' not in call and 'height\n' not in call:
+            missing_args.append('height')
+        if 'width,' not in call and 'width\n' not in call:
+            missing_args.append('width')
         
         if missing_args:
             print(f"✗ FAILED: Missing arguments: {', '.join(missing_args)}")
@@ -86,13 +98,17 @@ def test_arguments_defined_before_use():
         
         required_vars = {
             'prior_token_drop': False,
-            'target_size': False, 
             'crop_coords': False
         }
         
         for var in required_vars:
             if f'{var} =' in context:
                 required_vars[var] = True
+        
+        # For height and width, they should be computed earlier in the function
+        # Check if they're available in a broader context
+        if 'height' not in context or 'width' not in context:
+            print(f"⚠ WARNING: height/width may not be in immediate context (should be computed earlier)")
                 
         missing_vars = [v for v, found in required_vars.items() if not found]
         
@@ -100,7 +116,7 @@ def test_arguments_defined_before_use():
             print(f"✗ FAILED: Variables not defined: {', '.join(missing_vars)}")
             all_correct = False
         else:
-            print(f"✓ PASSED: All required variables are defined")
+            print(f"✓ PASSED: Required variables are defined")
     
     print(f"\n" + "=" * 80)
     if all_correct:
@@ -122,7 +138,6 @@ def test_argument_values():
     
     checks = {
         'prior_token_drop': r'prior_token_drop\s*=\s*(0\.[0-9]+|1\.0|0)',  # Valid probability [0, 1]
-        'target_size': r'target_size\s*=\s*\([^)]+\)',
         'crop_coords': r'crop_coords\s*=\s*\([^)]+\)',
     }
     
@@ -136,6 +151,13 @@ def test_argument_values():
         else:
             print(f"✗ {var_name}: No definitions found")
             all_correct = False
+    
+    # Check that height and width are used (computed earlier in the function)
+    if 'height' in content and 'width' in content:
+        print(f"✓ height and width: Variables are used in the code")
+    else:
+        print(f"✗ height and width: Variables not found")
+        all_correct = False
     
     print(f"\n" + "=" * 80)
     if all_correct:
