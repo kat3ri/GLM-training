@@ -196,36 +196,48 @@ class RewardTrainer(BaseTrainer):
         
         self.optimizer.zero_grad()
         
-        # Generate multiple samples for GRPO
-        with torch.no_grad():
-            samples = self._generate_samples(prompts, source_images)
-        
-        # Compute rewards for all samples
-        rewards = self.reward_calculator.compute_grpo_rewards(
-            samples=samples,
-            target_images=target_images,
-            prompts=prompts,
-            source_images=source_images_tensor if source_images else None,
-        )
-        
-        # For now, we'll use a simplified training approach
-        # In a full implementation, you'd need to:
-        # 1. Store old policy log probabilities
-        # 2. Compute new policy log probabilities
-        # 3. Use GRPO/PPO update rule
-        
-        # Simplified loss: use best sample and compute reconstruction loss
-        best_sample_idx = rewards.mean(dim=1).argmax()
-        best_sample = samples[best_sample_idx]
-        
-        # Reconstruction loss between best sample and target
-        recon_loss = F.mse_loss(best_sample, target_images)
-        
-        # Add reward as negative loss (we want to maximize reward)
-        reward_loss = -rewards[best_sample_idx].mean()
-        
-        # Combined loss
-        loss = recon_loss + reward_loss
+        # Compute a differentiable loss for training
+        # We use standard diffusion training: encode target to latents, add noise, denoise
+        with torch.cuda.amp.autocast(enabled=self.use_amp):
+            # Encode target images to latents using VAE
+            # Scale images to [-1, 1] for VAE
+            target_images_scaled = target_images * 2.0 - 1.0
+            
+            with torch.no_grad():
+                # Encode to latents (no gradients needed for VAE)
+                latents = self.model.vae.encode(target_images_scaled).latent_dist.sample()
+                latents = latents * self.model.vae.config.scaling_factor
+            
+            # Sample random timesteps for diffusion training
+            batch_size = latents.shape[0]
+            timesteps = torch.randint(
+                0, 1000, (batch_size,), device=self.device, dtype=torch.long
+            )
+            
+            # Add noise to latents
+            noise = torch.randn_like(latents)
+            noisy_latents = self._add_noise(latents, noise, timesteps)
+            
+            # Get text embeddings
+            text_inputs = self.model.tokenizer(
+                prompts,
+                padding=True,
+                return_tensors="pt",
+            ).to(self.device)
+            
+            with torch.no_grad():
+                # Get text embeddings from AR model (no gradients for AR when training DiT only)
+                text_embeds = self.model.ar_model(**text_inputs).last_hidden_state
+            
+            # Predict noise with DiT model (this HAS gradients when training DiT)
+            model_pred = self.model.dit_model(
+                noisy_latents,
+                timesteps,
+                text_embeds,
+            ).sample
+            
+            # Compute denoising loss
+            loss = F.mse_loss(model_pred, noise)
         
         # Backward pass
         if self.use_amp:
@@ -245,15 +257,61 @@ class RewardTrainer(BaseTrainer):
             )
             self.optimizer.step()
         
+        # Optionally compute rewards for monitoring (without gradients)
+        # Only compute rewards periodically to avoid slowdown
+        avg_reward = 0.0
+        if self.global_step % 100 == 0:
+            with torch.no_grad():
+                # Generate samples for reward computation (only for logging)
+                samples = self._generate_samples(prompts, source_images)
+                rewards = self.reward_calculator.compute_grpo_rewards(
+                    samples=samples,
+                    target_images=target_images,
+                    prompts=prompts,
+                    source_images=source_images_tensor if source_images else None,
+                )
+                avg_reward = rewards.mean().item()
+        
         # Metrics
         metrics = {
             "loss": loss.item(),
-            "recon_loss": recon_loss.item(),
-            "reward": -reward_loss.item(),
-            "avg_reward": rewards.mean().item(),
+            "avg_reward": avg_reward,
         }
         
         return metrics
+    
+    def _add_noise(
+        self,
+        latents: torch.Tensor,
+        noise: torch.Tensor,
+        timesteps: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Add noise to latents according to noise schedule.
+        
+        Args:
+            latents: Clean latents
+            noise: Noise to add
+            timesteps: Timesteps for noise schedule
+            
+        Returns:
+            Noisy latents
+        """
+        # Get noise schedule alphas
+        # This is a simplified version - in production, use the scheduler from the pipeline
+        sqrt_alpha_prod = (1 - timesteps.float() / 1000) ** 0.5
+        sqrt_one_minus_alpha_prod = (timesteps.float() / 1000) ** 0.5
+        
+        sqrt_alpha_prod = sqrt_alpha_prod.flatten()
+        while len(sqrt_alpha_prod.shape) < len(latents.shape):
+            sqrt_alpha_prod = sqrt_alpha_prod.unsqueeze(-1)
+        
+        sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.flatten()
+        while len(sqrt_one_minus_alpha_prod.shape) < len(latents.shape):
+            sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.unsqueeze(-1)
+        
+        noisy_latents = sqrt_alpha_prod * latents + sqrt_one_minus_alpha_prod * noise
+        return noisy_latents
     
     def evaluate(self, eval_loader: DataLoader) -> Dict[str, float]:
         """
