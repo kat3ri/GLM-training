@@ -186,6 +186,7 @@ class RewardTrainer(BaseTrainer):
         
         # Get source images for i2i mode
         source_images = None
+        source_images_tensor = None
         if self.mode == "i2i" and "source_images" in batch:
             source_images_tensor = batch["source_images"].to(self.device)
             # Convert to PIL images for generation
