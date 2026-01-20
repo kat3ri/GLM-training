@@ -3,7 +3,7 @@
 # Model Configuration
 model:
   name: "zai-org/GLM-Image"
-  component: "both"  # Options: "ar" (autoregressive only), "dit" (decoder only), "both"
+  component: "dit"  # Options: "ar" (autoregressive only), "dit" (decoder only), "both"
   torch_dtype: "bfloat16"
   device_map: "auto"
   
@@ -27,7 +27,7 @@ training:
   # Use gradient_accumulation_steps to achieve effective larger batch sizes.
   batch_size: 1
   gradient_accumulation_steps: 8  # Effective batch size = 1 * 8 = 8
-  num_epochs: 10
+  num_epochs: 2
   max_steps: null  # Set to override num_epochs
   
   # Learning rates
@@ -45,7 +45,7 @@ training:
   
   # Learning rate schedule
   lr_scheduler: "cosine"
-  warmup_steps: 500
+  warmup_steps: 50
   
   # Memory optimization
   gradient_checkpointing: true
@@ -98,7 +98,7 @@ data:
 
 # Distributed Training Configuration
 distributed:
-  enabled: true
+  enabled: false
   backend: "nccl"  # Options: "nccl", "gloo"
   find_unused_parameters: false
 
@@ -131,7 +131,7 @@ evaluation:
   enabled: true
   eval_prompts_file: "data/t2i/eval_prompts.txt"
   eval_target_images_dir: "data/t2i/eval_target_images"
-  num_eval_samples: 10
+  num_eval_samples: 2
 
 # Seed for reproducibility
 seed: 42

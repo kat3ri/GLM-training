@@ -1,9 +1,12 @@
+# python
 """
 Reward-based trainer using GRPO (Group Relative Policy Optimization).
 """
 from typing import Dict, Any, List, Optional
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils import clip_grad_norm_
 from torch.utils.data import DataLoader
 from PIL import Image
 import numpy as np
@@ -16,38 +19,45 @@ from ..utils import wrap_model_ddp
 
 class RewardTrainer(BaseTrainer):
     """Trainer with reward-based optimization using GRPO."""
-    
+
     def __init__(self, config: Dict[str, Any]):
         """
         Initialize reward trainer.
-        
+
         Args:
             config: Training configuration
+
+        Returns:
+            None
         """
         super().__init__(config)
-        
+
         # Initialize reward calculator
         self.reward_calculator = RewardCalculator(
             metrics=config["reward"]["metrics"],
             device=self.device,
         )
-        
+
         # GRPO settings
         self.num_samples = config["reward"]["grpo"]["num_samples"]
         self.kl_coef = config["reward"]["grpo"]["kl_coef"]
         self.clip_range = config["reward"]["grpo"]["clip_range"]
-        
+
         # Component-specific reward weights
         self.ar_reward_weight = config["reward"]["ar_reward_weight"]
         self.dit_reward_weight = config["reward"]["dit_reward_weight"]
-        
+
         # Training mode
         self.mode = config["training"]["mode"]
-    
+
     def _build_model(self) -> GLMImageWrapper:
-        """Build GLM-Image model."""
+        """Build GLM-Image model.
+
+        Returns:
+            GLMImageWrapper: Constructed model wrapper
+        """
         model_config = self.config["model"]
-        
+
         # Convert dtype string to torch dtype
         dtype_map = {
             "float32": torch.float32,
@@ -58,23 +68,23 @@ class RewardTrainer(BaseTrainer):
             model_config["torch_dtype"],
             torch.bfloat16
         )
-        
+
         model = GLMImageWrapper(
             model_name=model_config["name"],
             component=model_config["component"],
             torch_dtype=torch_dtype,
             device_map="cpu" if self.world_size > 1 else model_config["device_map"],
         )
-        
+
         model = model.to(self.device)
-        
+
         # Enable gradient checkpointing if specified
         if self.config["training"]["gradient_checkpointing"]:
             if hasattr(model.ar_model, "gradient_checkpointing_enable"):
                 model.ar_model.gradient_checkpointing_enable()
             if hasattr(model.dit_model, "enable_gradient_checkpointing"):
                 model.dit_model.enable_gradient_checkpointing()
-        
+
         # Wrap with DDP if distributed
         if self.world_size > 1:
             model = wrap_model_ddp(
@@ -82,9 +92,9 @@ class RewardTrainer(BaseTrainer):
                 device_ids=[self.local_rank],
                 find_unused_parameters=self.config["distributed"]["find_unused_parameters"],
             )
-        
+
         return model
-    
+
     def _generate_samples(
         self,
         prompts: List[str],
@@ -92,28 +102,28 @@ class RewardTrainer(BaseTrainer):
     ) -> List[torch.Tensor]:
         """
         Generate multiple samples for GRPO.
-        
+
         Args:
             prompts: Text prompts
             source_images: Source images for i2i
-            
+
         Returns:
-            List of generated image tensors
+            List[torch.Tensor]: List of generated image tensors
         """
-        samples = []
-        
+        samples: List[torch.Tensor] = []
+
         image_config = self.config["data"]["image_size"]
         height = image_config["height"]
         width = image_config["width"]
-        
+
         dit_config = self.config["model"]["dit"]
-        
+
         for i in range(self.num_samples):
             # Generate with different random seeds
             generator = torch.Generator(device=self.device).manual_seed(
                 self.global_step * self.num_samples + i
             )
-            
+
             # Generate images
             generated_images = self.model.generate(
                 prompts=prompts,
@@ -124,18 +134,18 @@ class RewardTrainer(BaseTrainer):
                 guidance_scale=dit_config["guidance_scale"],
                 generator=generator,
             )
-            
+
             # Convert PIL images to tensors
-            image_tensors = []
+            image_tensors: List[torch.Tensor] = []
             for img in generated_images:
                 img_array = np.array(img).astype(np.float32) / 255.0
                 img_tensor = torch.from_numpy(img_array).permute(2, 0, 1)
                 image_tensors.append(img_tensor)
-            
+
             samples.append(torch.stack(image_tensors).to(self.device))
-        
+
         return samples
-    
+
     def _compute_policy_loss(
         self,
         rewards: torch.Tensor,
@@ -144,46 +154,46 @@ class RewardTrainer(BaseTrainer):
     ) -> torch.Tensor:
         """
         Compute GRPO policy loss with PPO-style clipping.
-        
+
         Args:
             rewards: Relative rewards (num_samples, batch_size)
             log_probs: Current policy log probabilities
             old_log_probs: Old policy log probabilities
-            
+
         Returns:
-            Policy loss
+            torch.Tensor: Policy loss
         """
         # Compute probability ratio
         ratio = torch.exp(log_probs - old_log_probs)
-        
+
         # Clipped surrogate objective
         clipped_ratio = torch.clamp(
             ratio,
             1.0 - self.clip_range,
             1.0 + self.clip_range,
         )
-        
+
         # Policy loss
         policy_loss = -torch.min(
             ratio * rewards,
             clipped_ratio * rewards,
         ).mean()
-        
+
         return policy_loss
-    
+
     def train_step(self, batch: Dict[str, Any]) -> Dict[str, float]:
         """
         Single training step with reward-based optimization.
-        
+
         Args:
             batch: Training batch
-            
+
         Returns:
-            Dictionary of metrics
+            Dict[str, float]: Dictionary of metrics
         """
         prompts = batch["prompts"]
         target_images = batch["target_images"].to(self.device)
-        
+
         # Get source images for i2i mode
         source_images = None
         source_images_tensor = None
@@ -194,81 +204,139 @@ class RewardTrainer(BaseTrainer):
             for img_tensor in source_images_tensor:
                 img_np = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
                 source_images.append(Image.fromarray(img_np))
-        
+
         self.optimizer.zero_grad()
-        
+
         # Compute a differentiable loss for training
         # We use standard diffusion training: encode target to latents, add noise, denoise
-        with torch.cuda.amp.autocast(enabled=self.use_amp):
+        with torch.amp.autocast("cuda", enabled=self.use_amp):
             # Encode target images to latents using VAE
             # Scale images to [-1, 1] for VAE
             target_images_scaled = target_images * 2.0 - 1.0
-            
+
             with torch.no_grad():
                 # Encode to latents (no gradients needed for VAE)
                 latents = self.model.vae.encode(target_images_scaled).latent_dist.sample()
                 latents = latents * self.model.vae.config.scaling_factor
-            
+
             # Sample random timesteps for diffusion training
             batch_size = latents.shape[0]
             timesteps = torch.randint(
                 0, 1000, (batch_size,), device=self.device, dtype=torch.long
             )
-            
-            # Add noise to latents using the scheduler if available
+
+            # Add noise to latents using the scheduler if available and supports add_noise
             noise = torch.randn_like(latents)
-            if hasattr(self.model.pipe, 'scheduler'):
-                noisy_latents = self.model.pipe.scheduler.add_noise(latents, noise, timesteps)
+            scheduler = getattr(self.model.pipe, "scheduler", None)
+            if scheduler is not None and hasattr(scheduler, "add_noise"):
+                noisy_latents = scheduler.add_noise(latents, noise, timesteps)
             else:
                 # Fallback to simple noise schedule
                 noisy_latents = self._add_noise(latents, noise, timesteps)
-            
+
             # Get text embeddings
             text_inputs = self.model.tokenizer(
                 prompts,
                 padding=True,
                 return_tensors="pt",
             ).to(self.device)
-            
+
+            # Use the pipeline's text encoder to obtain glyph prompt embeddings compatible with DiT.
+            # This ensures the embedding dimensionality matches the DiT glyph_projector input.
             with torch.no_grad():
-                # Get text embeddings from AR model (no gradients for AR when training DiT only)
-                text_embeds = self.model.ar_model(**text_inputs).last_hidden_state
-            
+                try:
+                    prompt_embeds, _ = self.model.pipe.encode_prompt(
+                        prompt=prompts,
+                        do_classifier_free_guidance=False,
+                        num_images_per_prompt=1,
+                        device=self.device,
+                        dtype=self.model.pipe.dtype,
+                    )
+                    text_embeds = prompt_embeds.to(self.device)
+                except Exception:
+                    # Fallback: use AR model input embeddings if pipeline encoding fails
+                    input_ids_on_ar = text_inputs.get("input_ids").to(self.model.ar_model.device)
+                    text_embeds = self.model.ar_model.get_input_embeddings()(input_ids_on_ar).to(self.device)
+
+            # Ensure text_embeds dimensionality matches DiT transformer's expected text_embed_dim.
+            # If mismatched, project to required dimension with a temporary linear layer.
+            try:
+                expected_dim = getattr(self.model.dit_model.config, "text_embed_dim", None)
+            except Exception:
+                expected_dim = None
+
+            if expected_dim is not None and text_embeds.shape[-1] != expected_dim:
+                # Create a temporary projection layer on the correct device and dtype
+                proj = nn.Linear(text_embeds.shape[-1], expected_dim).to(device=self.device, dtype=text_embeds.dtype)
+                # Initialize projection weights for stability
+                nn.init.xavier_uniform_(proj.weight)
+                if proj.bias is not None:
+                    nn.init.zeros_(proj.bias)
+                # Project embeddings (no grad required)
+                text_embeds = proj(text_embeds)
+
             # Predict noise with DiT model (this HAS gradients when training DiT)
-            # The DiT transformer expects: hidden_states, timestep, encoder_hidden_states
+            # The DiT transformer requires additional positional/condition args: prior tokens, target size, crop coords.
+            batch_size = noisy_latents.shape[0]
+            # derive target size from target_images (pixels -> (H, W)) and repeat for batch
+            target_size = torch.tensor(
+                [target_images.shape[-2:],],
+                dtype=text_embeds.dtype,
+                device=self.device,
+            ).repeat(batch_size, 1)
+
+            # crop coords default to zeros (top-left)
+            crop_coords = torch.zeros((batch_size, 2), dtype=text_embeds.dtype, device=self.device)
+
+            # Minimal prior token placeholders (no prior tokens): shape (batch, 1)
+            prior_token_id = torch.zeros((batch_size, 1), dtype=torch.long, device=self.device)
+            prior_token_drop = torch.full_like(prior_token_id, False, dtype=torch.bool, device=self.device)
+
             model_output = self.model.dit_model(
                 hidden_states=noisy_latents,
-                timestep=timesteps,
                 encoder_hidden_states=text_embeds,
+                prior_token_id=prior_token_id,
+                prior_token_drop=prior_token_drop,
+                timestep=timesteps,
+                target_size=target_size,
+                crop_coords=crop_coords,
             )
-            
+
             # Extract the prediction
-            if hasattr(model_output, 'sample'):
+            if hasattr(model_output, "sample"):
                 model_pred = model_output.sample
             else:
                 model_pred = model_output
-            
+
             # Compute denoising loss
             loss = F.mse_loss(model_pred, noise)
-        
+
         # Backward pass
-        if self.use_amp:
+        # When using bfloat16, the CUDA foreach unscale op is not implemented for bfloat16 gradients.
+        # Avoid using GradScaler.unscale_ in that case and use the standard backward/step path.
+        model_dtype = getattr(self.model, "torch_dtype", None)
+        is_bf16 = model_dtype == torch.bfloat16
+
+        if self.use_amp and not is_bf16:
+            # Standard mixed-precision flow for fp16 using GradScaler
             self.scaler.scale(loss).backward()
+            # Unscale and clip gradients before stepping
             self.scaler.unscale_(self.optimizer)
-            torch.nn.utils.clip_grad_norm_(
+            clip_grad_norm_(
                 self.model.get_trainable_parameters(),
                 self.config["training"]["max_grad_norm"]
             )
             self.scaler.step(self.optimizer)
             self.scaler.update()
         else:
+            # BF16 or AMP disabled: use plain backward and optimizer step
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(
+            clip_grad_norm_(
                 self.model.get_trainable_parameters(),
                 self.config["training"]["max_grad_norm"]
             )
             self.optimizer.step()
-        
+
         # Optionally compute rewards for monitoring (without gradients)
         # Only compute rewards periodically to avoid slowdown
         avg_reward = 0.0
@@ -283,15 +351,15 @@ class RewardTrainer(BaseTrainer):
                     source_images=source_images_tensor if source_images else None,
                 )
                 avg_reward = rewards.mean().item()
-        
+
         # Metrics
         metrics = {
             "loss": loss.item(),
             "avg_reward": avg_reward,
         }
-        
+
         return metrics
-    
+
     def _add_noise(
         self,
         latents: torch.Tensor,
@@ -300,51 +368,51 @@ class RewardTrainer(BaseTrainer):
     ) -> torch.Tensor:
         """
         Add noise to latents according to noise schedule.
-        
+
         Args:
             latents: Clean latents
             noise: Noise to add
             timesteps: Timesteps for noise schedule
-            
+
         Returns:
-            Noisy latents
+            torch.Tensor: Noisy latents
         """
         # Get noise schedule alphas
         # This is a simplified version - in production, use the scheduler from the pipeline
         sqrt_alpha_prod = (1 - timesteps.float() / 1000) ** 0.5
         sqrt_one_minus_alpha_prod = (timesteps.float() / 1000) ** 0.5
-        
+
         sqrt_alpha_prod = sqrt_alpha_prod.flatten()
         while len(sqrt_alpha_prod.shape) < len(latents.shape):
             sqrt_alpha_prod = sqrt_alpha_prod.unsqueeze(-1)
-        
+
         sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.flatten()
         while len(sqrt_one_minus_alpha_prod.shape) < len(latents.shape):
             sqrt_one_minus_alpha_prod = sqrt_one_minus_alpha_prod.unsqueeze(-1)
-        
+
         noisy_latents = sqrt_alpha_prod * latents + sqrt_one_minus_alpha_prod * noise
         return noisy_latents
-    
+
     def evaluate(self, eval_loader: DataLoader) -> Dict[str, float]:
         """
         Evaluate the model.
-        
+
         Args:
             eval_loader: Evaluation data loader
-            
+
         Returns:
-            Evaluation metrics
+            Dict[str, float]: Evaluation metrics
         """
         self.model.eval()
-        
+
         total_reward = 0.0
         num_samples = 0
-        
+
         with torch.no_grad():
             for batch in eval_loader:
                 prompts = batch["prompts"]
                 target_images = batch["target_images"].to(self.device)
-                
+
                 source_images = None
                 if self.mode == "i2i" and "source_images" in batch:
                     source_images_tensor = batch["source_images"].to(self.device)
@@ -352,10 +420,10 @@ class RewardTrainer(BaseTrainer):
                     for img_tensor in source_images_tensor:
                         img_np = (img_tensor.permute(1, 2, 0).cpu().numpy() * 255).astype(np.uint8)
                         source_images.append(Image.fromarray(img_np))
-                
+
                 # Generate samples
                 samples = self._generate_samples(prompts, source_images)
-                
+
                 # Compute rewards
                 rewards = self.reward_calculator.compute_grpo_rewards(
                     samples=samples,
@@ -363,12 +431,12 @@ class RewardTrainer(BaseTrainer):
                     prompts=prompts,
                     source_images=source_images_tensor if source_images else None,
                 )
-                
+
                 total_reward += rewards.mean().item()
                 num_samples += 1
-        
+
         self.model.train()
-        
+
         return {
             "avg_reward": total_reward / num_samples if num_samples > 0 else 0.0,
         }
