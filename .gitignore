@@ -33,6 +33,8 @@ htmlcov/
 
 # Test files (temporary)
 test_device_map_fix.py
+test_gradient_flow.py
+validate_gradient_fix.py
 
 # Jupyter Notebook
 .ipynb_checkpoints
