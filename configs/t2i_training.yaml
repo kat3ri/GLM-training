@@ -125,6 +125,10 @@ checkpoint:
   resume_from: null  # Path to checkpoint to resume from
   save_total_limit: 3  # Keep only N most recent checkpoints
   save_optimizer: true
+  # LoRA / PEFT checkpointing options
+  save_lora: false       # Whether to save LoRA/PEFT adapters when present
+  lora_dir: "checkpoints/lora"  # Directory to save LoRA adapters
+  save_lora_only: false  # If true, only save LoRA adapters (skip full checkpoint)
 
 # Evaluation Configuration
 evaluation:
