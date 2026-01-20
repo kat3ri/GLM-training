@@ -144,7 +144,67 @@ class BaseTrainer:
         """Save checkpoint."""
         if not is_main_process():
             return
-        
+
+        # Check PEFT/LoRA save options from config
+        ckpt_cfg = self.config.get("checkpoint", {})
+        save_lora = ckpt_cfg.get("save_lora", False)
+        save_lora_only = ckpt_cfg.get("save_lora_only", False)
+        lora_dir = Path(ckpt_cfg.get("lora_dir", self.checkpoint_dir / "lora"))
+
+        # If user requested to save LoRA adapters, attempt to save them first.
+        lora_saved = False
+        if save_lora or save_lora_only:
+            try:
+                from peft import PeftModel
+
+                have_peft = True
+            except Exception:
+                have_peft = False
+
+            if have_peft:
+                # Helper to save a component if it's a PeftModel
+                def _try_save_peft(component, target_dir: Path) -> bool:
+                    if component is None:
+                        return False
+                    try:
+                        if isinstance(component, PeftModel):
+                            target_dir.mkdir(parents=True, exist_ok=True)
+                            component.save_pretrained(str(target_dir))
+                            return True
+                    except Exception:
+                        # ignore and continue
+                        return False
+                    return False
+
+                # Try saving the wrapper itself first
+                if _try_save_peft(self.model, lora_dir):
+                    lora_saved = True
+                else:
+                    # Try common subcomponents that may be wrapped by PEFT
+                    for comp_name in ("ar_model", "dit_model", "pipe", "vision_language_encoder", "transformer"):
+                        comp = getattr(self.model, comp_name, None)
+                        if comp is not None:
+                            comp_target = lora_dir / comp_name
+                            if _try_save_peft(comp, comp_target):
+                                lora_saved = True
+
+                if lora_saved and self.logger:
+                    self.logger.info(f"LoRA/PEFT adapters saved to {lora_dir}")
+                if save_lora_only:
+                    if lora_saved:
+                        if self.logger:
+                            self.logger.info("save_lora_only=True: skipping full checkpoint save")
+                        return
+                    else:
+                        # fall through and save full checkpoint if no adapters were found
+                        if self.logger:
+                            self.logger.warning(
+                                "save_lora_only=True but no LoRA adapters found/saved — saving full checkpoint instead"
+                            )
+            else:
+                if self.logger:
+                    self.logger.warning("PEFT package not available; cannot save LoRA/PEFT adapters")
+
         checkpoint = {
             "epoch": self.epoch,
             "global_step": self.global_step,
@@ -153,19 +213,19 @@ class BaseTrainer:
             "best_metric": self.best_metric,
             "config": self.config,
         }
-        
+
         if self.scheduler is not None:
             checkpoint["scheduler_state_dict"] = self.scheduler.state_dict()
-        
+
         if self.scaler is not None:
             checkpoint["scaler_state_dict"] = self.scaler.state_dict()
-        
+
         save_path = self.checkpoint_dir / filename
         torch.save(checkpoint, save_path)
-        
+
         if self.logger:
             self.logger.info(f"Checkpoint saved to {save_path}")
-        
+
         # Manage checkpoint limit
         self._cleanup_checkpoints()
     
